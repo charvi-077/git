@@ -42,10 +42,10 @@ test_expect_success 'setup' '
 	test_tick &&
 	git commit --fixup=HEAD -a &&
 	test_tick &&
-	FAKE_COMMIT_AMEND="edited 1" git commit --amend=B &&
+	FAKE_COMMIT_AMEND="edited 1" git commit --allow-empty --amend=B &&
 	test_tick &&
-	FAKE_COMMIT_AMEND="edited 2" git commit --amend=HEAD &&
-	echo B2>B &&
+	FAKE_COMMIT_AMEND="edited 2" git commit --allow-empty --amend=HEAD &&
+	echo B2 >B &&
 	test_tick &&
 	FAKE_COMMIT_AMEND="edited squash" git commit --squash=HEAD -a &&
 	echo B3 >B &&
@@ -107,13 +107,13 @@ test_expect_success 'skipping amend after fixup gives correct message' '
 test_expect_success 'sequence of fixup, amend & squash --signoff works' '
 	git checkout --detach branch &&
 	FAKE_COMMIT_AMEND=squashed \
-	FAKE_MESSAGE_COPY=actual-squash-message \
+		FAKE_MESSAGE_COPY=actual-squash-message \
 		git -c commit.status=false rebase -i --autosquash \
-						--signoff A &&
+		--signoff A &&
 	git diff-tree --exit-code --patch HEAD branch -- &&
 	test_cmp_rev HEAD^ A &&
 	test_i18ncmp "$TEST_DIRECTORY/t3437/expected-squash-message" \
-		 actual-squash-message
+		actual-squash-message
 '
 
 test_expect_success 'first amend commented out in sequence fixup amend amend' '
