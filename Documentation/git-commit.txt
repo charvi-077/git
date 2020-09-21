@@ -83,7 +83,7 @@ OPTIONS
 
 -c <commit>::
 --reedit-message=<commit>::
-	Like '-C', but with `-c` the editor is invoked, so that
+	Like `-C`, but with `-c` the editor is invoked, so that
 	the user can further edit the commit message.
 
 --fixup=<commit>::
@@ -100,10 +100,10 @@ OPTIONS
 	linkgit:git-rebase[1] for details.
 
 --reset-author::
-	When used with -C/-c/--amend options, or when committing after a
-	conflicting cherry-pick, declare that the authorship of the
-	resulting commit now belongs to the committer. This also renews
-	the author timestamp.
+	When used with `-C`/`-c`/`--amend` options, or when committing
+	after a conflicting cherry-pick, declare that the authorship of
+	the resulting commit now belongs to the committer. This also
+	renews the author timestamp.
 
 --short::
 	When doing a dry-run, give the output in the short-format. See
