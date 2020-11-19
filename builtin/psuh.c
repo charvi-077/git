@@ -1,10 +1,12 @@
 #include "builtin.h"
 #include "config.h"
+#include "wt-status.h"
 
 int cmd_psuh(int argc, const char **argv, const char *prefix)
 {
     int i;
     const char *cfg_name;
+    struct wt_status status;
     printf(_("This is my first git subcommand.\n"));
     printf(Q_("Your args (there is %d):\n","Your args (there are %d):\n",argc),
 		argc);
@@ -18,6 +20,10 @@ int cmd_psuh(int argc, const char **argv, const char *prefix)
         printf(_("No name is found in config"));
     else
         printf(_("Your name: %s\n"), cfg_name);
+
+    wt_status_prepare(the_repository, &status);
+    git_config(git_default_config, &status);
+    printf(_("Your current branch: %s\n"), status.branch);
     return 0;
 }
 
