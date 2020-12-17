@@ -84,7 +84,6 @@ enum todo_command {
 	TODO_REVERT,
 	TODO_EDIT,
 	TODO_REWORD,
-	TODO_AMEND,
 	TODO_FIXUP,
 	TODO_SQUASH,
 	/* commands that do something else than handling a single commit */
