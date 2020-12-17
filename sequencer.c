@@ -1634,7 +1634,6 @@ static struct {
 	{ 0,   "revert" },
 	{ 'e', "edit" },
 	{ 'r', "reword" },
-	{ 'a', "amend" },
 	{ 'f', "fixup" },
 	{ 's', "squash" },
 	{ 'x', "exec" },
@@ -1668,8 +1667,7 @@ static int is_noop(const enum todo_command command)
 
 static int is_fixup(enum todo_command command)
 {
-	return command == TODO_FIXUP || command == TODO_SQUASH ||
-		command == TODO_AMEND;
+	return command == TODO_FIXUP || command == TODO_SQUASH;
 }
 
 /* Does this command create a (non-merge) commit? */
@@ -1680,7 +1678,6 @@ static int is_pick_or_similar(enum todo_command command)
 	case TODO_REVERT:
 	case TODO_EDIT:
 	case TODO_REWORD:
-	case TODO_AMEND:
 	case TODO_FIXUP:
 	case TODO_SQUASH:
 		return 1;
@@ -1688,6 +1685,12 @@ static int is_pick_or_similar(enum todo_command command)
 		return 0;
 	}
 }
+
+enum todo_item_flags {
+	TODO_EDIT_MERGE_MSG = (1 << 0),
+	TODO_AMEND_MSG      = (1 << 1),
+	TODO_EDIT_AMEND_MSG = (1 << 2),
+};
 
 static size_t subject_length(const char *body)
 {
@@ -1816,7 +1819,8 @@ static void update_squash_message_for_amend(struct strbuf *msg)
 }
 
 static int append_squash_message(struct strbuf *buf, const char *body,
-			 enum todo_command command, struct replay_opts *opts)
+			 enum todo_command command, struct replay_opts *opts,
+			 enum todo_item_flags flag)
 {
 	const char *fixup_msg;
 	size_t commented_len = 0, fixup_off;
@@ -1839,21 +1843,25 @@ static int append_squash_message(struct strbuf *buf, const char *body,
 	strbuf_addstr(buf, body + commented_len);
 
 	/* amend after squash behaves like squash */
-	if (command == TODO_AMEND && !seen_squash(opts)) {
-			/*
-			 * We're replacing the commit message so we need to
-			 * append the Signed-off-by: trailer if the user
-			 * requested '--signoff'.
-			 */
-			if (opts->signoff)
-				append_signoff(buf, 0, 0);
+	if (((flag & TODO_AMEND_MSG) || (flag & TODO_EDIT_AMEND_MSG)) && !seen_squash(opts)) {
+		/*
+		 * We're replacing the commit message so we need to
+		 * append the Signed-off-by: trailer if the user
+		 * requested '--signoff'.
+		 */
+		if (opts->signoff)
+			append_signoff(buf, 0, 0);
 
-			fixup_msg = skip_blank_lines(buf->buf + fixup_off);
+		fixup_msg = skip_blank_lines(buf->buf + fixup_off);
+		if (flag & TODO_AMEND_MSG) {
 			if (write_message(fixup_msg, strlen(fixup_msg),
-					  rebase_path_fixup_msg(), 0))
+					rebase_path_fixup_msg(), 0))
 				return error(_("cannot write '%s'"),
-					     rebase_path_fixup_msg());
-	} else {
+					rebase_path_fixup_msg());
+		} else {
+			unlink(rebase_path_fixup_msg());
+			}
+	} else  {
 		unlink(rebase_path_fixup_msg());
 	}
 
@@ -1863,7 +1871,8 @@ static int append_squash_message(struct strbuf *buf, const char *body,
 static int update_squash_messages(struct repository *r,
 				  enum todo_command command,
 				  struct commit *commit,
-				  struct replay_opts *opts)
+				  struct replay_opts *opts,
+				  enum todo_item_flags flag)
 {
 	struct strbuf buf = STRBUF_INIT;
 	int res = 0;
@@ -1886,7 +1895,9 @@ static int update_squash_messages(struct repository *r,
 			    opts->current_fixup_count + 2);
 		strbuf_splice(&buf, 0, eol - buf.buf, header.buf, header.len);
 		strbuf_release(&header);
-		if (command == TODO_AMEND && !seen_squash(opts))
+		if (((flag & TODO_AMEND_MSG) ||
+		     (flag & TODO_EDIT_AMEND_MSG)) &&
+		     !seen_squash(opts))
 			update_squash_message_for_amend(&buf);
 	} else {
 		struct object_id head;
@@ -1901,7 +1912,7 @@ static int update_squash_messages(struct repository *r,
 			return error(_("could not read HEAD's commit message"));
 
 		find_commit_subject(head_message, &body);
-		if (command == TODO_FIXUP) {
+		if (command == TODO_FIXUP && !flag) {
 			if (write_message(body, strlen(body),
 					  rebase_path_fixup_msg(), 0)) {
 				unuse_commit_buffer(head_commit, head_message);
@@ -1912,12 +1923,11 @@ static int update_squash_messages(struct repository *r,
 		strbuf_addf(&buf, "%c ", comment_line_char);
 		strbuf_addf(&buf, combined_commit_msg_str, 2);
 		strbuf_addf(&buf, "\n%c ", comment_line_char);
-		strbuf_addstr(&buf,
-			      command == TODO_AMEND ?
+		strbuf_addstr(&buf, (flag & TODO_AMEND_MSG) ?
 			      skip_first_commit_msg_str :
 			      first_commit_msg_str);
 		strbuf_addstr(&buf, "\n\n");
-		if (command == TODO_AMEND)
+		if ((flag & TODO_AMEND_MSG) || (flag & TODO_EDIT_AMEND_MSG))
 			strbuf_add_commented_lines(&buf, body, strlen(body));
 		else
 			strbuf_addstr(&buf, body);
@@ -1930,8 +1940,9 @@ static int update_squash_messages(struct repository *r,
 			     oid_to_hex(&commit->object.oid));
 	find_commit_subject(message, &body);
 
-	if (command == TODO_SQUASH || command == TODO_AMEND) {
-		res = append_squash_message(&buf, body, command, opts);
+	if (command == TODO_SQUASH || (flag & TODO_AMEND_MSG) ||
+			(flag & TODO_EDIT_AMEND_MSG)) {
+		res = append_squash_message(&buf, body, command, opts, flag);
 	} else if (command == TODO_FIXUP) {
 		strbuf_addf(&buf, "\n%c ", comment_line_char);
 		strbuf_addf(&buf, skip_nth_commit_msg_fmt,
@@ -2145,7 +2156,8 @@ static int do_pick_commit(struct repository *r,
 	if (command == TODO_REWORD)
 		reword = 1;
 	else if (is_fixup(command)) {
-		if (update_squash_messages(r, command, commit, opts))
+		if (update_squash_messages(r, command, commit,
+					   opts, item->flags))
 			return -1;
 		flags |= AMEND_MSG;
 		if (!final_fixup)
@@ -2307,10 +2319,6 @@ static int read_and_refresh_cache(struct repository *r,
 	return 0;
 }
 
-enum todo_item_flags {
-	TODO_EDIT_MERGE_MSG = 1
-};
-
 void todo_list_release(struct todo_list *todo_list)
 {
 	strbuf_release(&todo_list->buf);
@@ -2395,6 +2403,17 @@ static int parse_insn_line(struct repository *r, struct todo_item *item,
 		item->arg_offset = bol - buf;
 		item->arg_len = (int)(eol - bol);
 		return 0;
+	}
+
+	if (item->command == TODO_FIXUP) {
+		if (skip_prefix(bol, "-C", &bol)) {
+			bol += strspn(bol, " \t");
+			item->flags |= TODO_AMEND_MSG;
+		}
+		else if (skip_prefix(bol, "-c", &bol)) {
+			bol += strspn(bol, " \t");
+			item->flags |= TODO_EDIT_AMEND_MSG;
+		}
 	}
 
 	if (item->command == TODO_MERGE) {
@@ -5390,6 +5409,14 @@ static void todo_list_to_strbuf(struct repository *r, struct todo_list *todo_lis
 			const char *oid = flags & TODO_LIST_SHORTEN_IDS ?
 					  short_commit_name(item->commit) :
 					  oid_to_hex(&item->commit->object.oid);
+
+			if (item->command == TODO_FIXUP) {
+				if (item->flags & TODO_EDIT_AMEND_MSG)
+					strbuf_addstr(buf, " -c");
+				else if (item->flags & TODO_AMEND_MSG) {
+					strbuf_addstr(buf, " -C");
+				}
+			}
 
 			if (item->command == TODO_MERGE) {
 				if (item->flags & TODO_EDIT_MERGE_MSG)
