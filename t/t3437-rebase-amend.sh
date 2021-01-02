@@ -3,7 +3,13 @@
 # Copyright (c) 2018 Phillip Wood
 #
 
-test_description='git rebase interactive amend'
+test_description='git rebase interactive fixup options
+
+This test checks the fixup[-C|-c] in rebase interactive
+where fixup -C works like fixup command but replace current
+commit message with the previous commit message and using
+fixup -c we can also edit the commit message
+'
 
 . ./test-lib.sh
 
@@ -12,19 +18,21 @@ test_description='git rebase interactive amend'
 EMPTY=""
 
 test_commit_message () {
-	rev="$1"  # commit or tag we want to test
-	str="$2"  # test against a string, or
-	file="$3" # test against the content of a file
+	rev="$1" && # commit or tag we want to test
+	file="$2" && # test against the content of a file
 	git show --no-patch --pretty=format:%B "$rev" >actual-message &&
-	test -n "$str" && {
-		printf "%s\n" "$str" >tmp-expected-message
+	if test "$2" = -m
+	then
+		str="$3" && # test against a string
+		printf "%s\n" "$str" >tmp-expected-message &&
 		file="tmp-expected-message"
-	}
+	fi
 	test_cmp "$file" actual-message
 }
 
-get_author() {
-	git log -1 --pretty=format:"%al %an %aE"
+get_author () {
+	rev="$1" &&
+	git log -1 --pretty=format:"%an %ae" "$rev"
 }
 
 test_expect_success 'setup' '
@@ -41,7 +49,7 @@ test_expect_success 'setup' '
 
 	test_commit A A &&
 	test_commit B B &&
-	get_author >expected-author &&
+	get_author HEAD >expected-author &&
 	ORIG_AUTHOR_NAME="$GIT_AUTHOR_NAME" &&
 	ORIG_AUTHOR_EMAIL="$GIT_AUTHOR_EMAIL" &&
 	GIT_AUTHOR_NAME="Amend Author" &&
@@ -100,53 +108,64 @@ test_expect_success 'setup' '
 	GIT_COMMITTER_EMAIL="rebase.committer@example.com"
 '
 
-test_expect_success 'simple amend works' '
+test_expect_success 'simple fixup -C works' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A2 &&
-	FAKE_LINES="1 amend 2" git rebase -i B &&
+	FAKE_LINES="1 fixup_-C 2" git rebase -i B &&
 	test_cmp_rev HEAD^ B &&
 	test_cmp_rev HEAD^{tree} A2^{tree} &&
-	test_commit_message HEAD "A2"
+	test_commit_message HEAD -m "A2"
 '
 
-test_expect_success 'amend removes amend! from message' '
+test_expect_success 'simple fixup -c works' '
+	test_when_finished "test_might_fail git rebase --abort" &&
+	git checkout --detach A2 &&
+	FAKE_LINES="1 fixup_-c 2" \
+		FAKE_COMMIT_MESSAGE="Modified A2" \
+		git rebase -i B &&
+	test_cmp_rev HEAD^ B &&
+	test_cmp_rev HEAD^{tree} A2^{tree} &&
+	test_commit_message HEAD -m "Modified A2"
+'
+
+test_expect_success 'fixup -C removes amend! from message' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A1 &&
-	FAKE_LINES="1 amend 2" git rebase -i A &&
+	FAKE_LINES="1 fixup_-C 2" git rebase -i A &&
 	test_cmp_rev HEAD^ A &&
 	test_cmp_rev HEAD^{tree} A1^{tree} &&
-	test_commit_message HEAD "" expected-message &&
-	get_author >actual-author &&
+	test_commit_message HEAD expected-message &&
+	get_author HEAD >actual-author &&
 	test_cmp expected-author actual-author
 '
 
-test_expect_success 'amend with conflicts gives correct message' '
+test_expect_success 'fixup -C with conflicts gives correct message' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A1 &&
-	test_must_fail env FAKE_LINES="1 amend 2" git rebase -i conflicts &&
+	test_must_fail env FAKE_LINES="1 fixup_-C 2" git rebase -i conflicts &&
 	git checkout --theirs -- A &&
 	git add A &&
 	FAKE_COMMIT_AMEND=edited git rebase --continue &&
 	test_cmp_rev HEAD^ conflicts &&
 	test_cmp_rev HEAD^{tree} A1^{tree} &&
 	test_write_lines "" edited >>expected-message &&
-	test_commit_message HEAD "" expected-message &&
-	get_author >actual-author &&
+	test_commit_message HEAD expected-message &&
+	get_author HEAD >actual-author &&
 	test_cmp expected-author actual-author
 '
 
-test_expect_success 'skipping amend after fixup gives correct message' '
+test_expect_success 'skipping fixup -C after fixup gives correct message' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A3 &&
-	test_must_fail env FAKE_LINES="1 fixup 2 amend 4" git rebase -i A &&
+	test_must_fail env FAKE_LINES="1 fixup 2 fixup_-C 4" git rebase -i A &&
 	git reset --hard &&
 	FAKE_COMMIT_AMEND=edited git rebase --continue &&
-	test_commit_message HEAD "B"
+	test_commit_message HEAD -m "B"
 '
 
-test_expect_success 'sequence of fixup, amend & squash --signoff works' '
+test_expect_success 'sequence of fixup, fixup -C & squash --signoff works' '
 	git checkout --detach branch &&
-	FAKE_LINES="1 fixup 2 amend 3 amend 4 squash 5 amend 6" \
+	FAKE_LINES="1 fixup 2 fixup_-C 3 fixup_-C 4 squash 5 fixup_-C 6" \
 		FAKE_COMMIT_AMEND=squashed \
 		FAKE_MESSAGE_COPY=actual-squash-message \
 		git -c commit.status=false rebase -ik --signoff A &&
@@ -156,13 +175,13 @@ test_expect_success 'sequence of fixup, amend & squash --signoff works' '
 		actual-squash-message
 '
 
-test_expect_success 'first amend commented out in sequence fixup amend amend' '
+test_expect_success 'first fixup -C commented out in sequence fixup fixup -C fixup -C' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout branch && git checkout --detach branch~2 &&
 	git log -1 --pretty=format:%b >expected-message &&
-	FAKE_LINES="1 fixup 2 amend 3 amend 4" git rebase -i A &&
+	FAKE_LINES="1 fixup 2 fixup_-C 3 fixup_-C 4" git rebase -i A &&
 	test_cmp_rev HEAD^ A &&
-	test_commit_message HEAD "" expected-message
+	test_commit_message HEAD expected-message
 '
 
 test_done
