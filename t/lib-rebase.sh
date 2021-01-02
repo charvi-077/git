@@ -47,10 +47,12 @@ set_fake_editor () {
 	echo 'rebase -i script before editing:'
 	cat "$1".tmp
 	action=\&
-	for line in $FAKE_LINES; do
-		case $line in
-		pick|p|amend|a|squash|s|fixup|f|edit|e|reword|r|drop|d|label|l|reset|r|merge|m)
+	eval command="fixup -C"
+	for line in "$FAKE_LINES"; do
+		case "$line" in
+		pick|p|squash|s|${command}|fixup|f|edit|e|reword|r|drop|d|label|l|reset|r|merge|m)
 			action="$line";;
+			#echo "$line" >> "$1"
 		exec_*|x_*|break|b)
 			echo "$line" | sed 's/_/ /g' >> "$1";;
 		"#")

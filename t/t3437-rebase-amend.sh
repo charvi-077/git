@@ -102,13 +102,13 @@ test_expect_success 'setup' '
 
 test_expect_success 'simple amend works' '
 	test_when_finished "test_might_fail git rebase --abort" &&
-	git checkout --detach A2 &&
-	FAKE_LINES="1 amend 2" git rebase -i B &&
-	test_cmp_rev HEAD^ B &&
-	test_cmp_rev HEAD^{tree} A2^{tree} &&
+	git checkout --detach A2 && test_pause &&
+	FAKE_LINES="1 fixup -C 2" git rebase -i B && test_pause &&
+	test_cmp_rev HEAD^ B && test_pause &&
+	test_cmp_rev HEAD^{tree} A2^{tree} && test_pause &&
 	test_commit_message HEAD "A2"
 '
-
+<<comment
 test_expect_success 'amend removes amend! from message' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A1 &&
@@ -123,7 +123,7 @@ test_expect_success 'amend removes amend! from message' '
 test_expect_success 'amend with conflicts gives correct message' '
 	test_when_finished "test_might_fail git rebase --abort" &&
 	git checkout --detach A1 &&
-	test_must_fail env FAKE_LINES="1 amend 2" git rebase -i conflicts &&
+	test_must_fail env FAKE_LINES="1 \"fixup -C\" 2" git rebase -i conflicts &&
 	git checkout --theirs -- A &&
 	git add A &&
 	FAKE_COMMIT_AMEND=edited git rebase --continue &&
@@ -164,5 +164,5 @@ test_expect_success 'first amend commented out in sequence fixup amend amend' '
 	test_cmp_rev HEAD^ A &&
 	test_commit_message HEAD "" expected-message
 '
-
+ comment
 test_done
