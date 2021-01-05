@@ -888,8 +888,16 @@ If you want to fold two or more commits into one, replace the command
 If the commits had different authors, the folded commit will be
 attributed to the author of the first commit.  The suggested commit
 message for the folded commit is the concatenation of the commit
-messages of the first commit and of those with the "squash" command,
-but omits the commit messages of commits with the "fixup" command.
+messages of the first commit and of those with the "squash" command
+and with the "fixup" command there are options as below:
+
+- "fixup" command, omits the commit messages of commits.
+
+- "fixup -C" command, replace with the commit message of the "fixup -C"
+   command.
+
+- "fixup -c" command, replace with the commit message of the "fixup -c"
+   command and also opens the editor to edit the commit message.
 
 'git rebase' will stop when "pick" has been replaced with "edit" or
 when a command fails due to merge errors. When you are done editing
