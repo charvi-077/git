@@ -105,7 +105,7 @@ static const char *template_file;
  */
 static const char *author_message, *author_message_buffer;
 static char *edit_message, *use_message;
-static const char *amend_message, *fixup_message, *squash_message;
+static const char *fixup_message, *squash_message;
 static int all, also, interactive, patch_interactive, only, amend, signoff;
 static int edit_flag = -1; /* unspecified */
 static int quiet, verbose, no_verify, allow_empty, dry_run, renew_authorship;
@@ -177,7 +177,7 @@ static int opt_parse_rename_score(const struct option *opt, const char *arg, int
 	return 0;
 }
 
-static int opt_parse_amend(const struct option *opt, const char *arg, int unset)
+/*static int opt_parse_amend(const struct option *opt, const char *arg, int unset)
 {
 	if (unset)
 		amend = 0;
@@ -186,7 +186,7 @@ static int opt_parse_amend(const struct option *opt, const char *arg, int unset)
 	else
 		amend = 1;
 	return 0;
-}
+}*/
 
 static void determine_whence(struct wt_status *s)
 {
@@ -730,12 +730,12 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			format_commit_message(c, "squash! %s\n\n", &sb,
 					      &ctx);
 		}
-	} else if (amend_message) {
+	} else if (fixup_message && edit_flag) {
 		struct pretty_print_context ctx = {0};
 		struct commit *c;
-		c = lookup_commit_reference_by_name(amend_message);
+		c = lookup_commit_reference_by_name(fixup_message);
 		if (!c)
-			die(_("could not lookup commit %s"), amend_message);
+			die(_("could not lookup commit %s"), fixup_message);
 		ctx.output_encoding = get_commit_output_encoding();
 		if (logfile || use_message || have_option_m) {
 			format_commit_message(c, "amend! %s\n\n", &sb, &ctx);
@@ -783,7 +783,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 			strbuf_addstr(&sb, skip_blank_lines(buffer + 2));
 		hook_arg1 = "commit";
 		hook_arg2 = use_message;
-	} else if (fixup_message) {
+	} else if (fixup_message && !edit_flag) {
 		struct pretty_print_context ctx = {0};
 		struct commit *commit;
 		commit = lookup_commit_reference_by_name(fixup_message);
@@ -1213,7 +1213,7 @@ static int parse_and_validate_options(int argc, const char *argv[],
 
 	if (logfile || have_option_m || use_message || fixup_message)
 		use_editor = 0;
-	if (0 <= edit_flag)
+	if (0 <= edit_flag || (fixup_message && edit_flag))
 		use_editor = edit_flag;
 
 	/* Sanity check options */
@@ -1227,9 +1227,8 @@ static int parse_and_validate_options(int argc, const char *argv[],
 		else if (whence == FROM_REBASE_PICK)
 			die(_("You are in the middle of a rebase -- cannot amend."));
 	}
-	if ((fixup_message && squash_message) ||
-	    (amend_message && (fixup_message || squash_message)))
-		die(_("Only one of --amend=<commit>/--squash/--fixup can be used."));
+	if (fixup_message && squash_message)
+		die(_("Options --squash and --fixup cannot be used together"));
 	if (use_message)
 		f++;
 	if (edit_message)
@@ -1546,7 +1545,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK('m', "message", &message, N_("message"), N_("commit message"), opt_parse_m),
 		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
 		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
-		OPT_STRING(0, "fixup", &fixup_message, N_("commit"), N_("use autosquash formatted message to fixup specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("commit"), N_("use autosquash formatted message to fixup or amend specified commit")),
 		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
 		OPT_BOOL(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
 		OPT_BOOL('s', "signoff", &signoff, N_("add a Signed-off-by trailer")),
@@ -1578,9 +1577,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 			    STATUS_FORMAT_LONG),
 		OPT_BOOL('z', "null", &s.null_termination,
 			 N_("terminate entries with NUL")),
-		{ OPTION_CALLBACK, 0, "amend", &amend, N_("commit"),
-		  N_("amend previous commit (Default HEAD)"), PARSE_OPT_OPTARG,
-		  opt_parse_amend, 0 },
+		OPT_BOOL(0, "amend", &amend, N_("amend previous commit")),
 		OPT_BOOL(0, "no-post-rewrite", &no_post_rewrite, N_("bypass post-rewrite hook")),
 		{ OPTION_STRING, 'u', "untracked-files", &untracked_files_arg, N_("mode"), N_("show untracked files, optional modes: all, normal, no. (Default: all)"), PARSE_OPT_OPTARG, NULL, (intptr_t)"all" },
 		OPT_PATHSPEC_FROM_FILE(&pathspec_from_file),
