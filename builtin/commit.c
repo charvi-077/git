@@ -105,7 +105,7 @@ static const char *template_file;
  */
 static const char *author_message, *author_message_buffer;
 static char *edit_message, *use_message;
-static char *fixup_message, *squash_message;
+static const char *fixup_message, *squash_message;
 static int all, also, interactive, patch_interactive, only, amend, signoff;
 static int edit_flag = -1; /* unspecified */
 static int quiet, verbose, no_verify, allow_empty, dry_run, renew_authorship;
@@ -681,6 +681,38 @@ static void adjust_comment_line_char(const struct strbuf *sb)
 	comment_line_char = *p;
 }
 
+static int prepare_amend_commit(struct commit *commit, struct strbuf *sb,
+								struct pretty_print_context *ctx) {
+	if (!commit)
+		die(_("could not lookup commit %s"), fixup_message);
+	ctx->output_encoding = get_commit_output_encoding();
+	if (logfile || use_message || have_option_m) {
+		use_editor = 0;
+		format_commit_message(commit, "amend! %s\n\n", sb, ctx);
+	} else {
+		char *subject;
+		size_t off;
+		strbuf_addstr(sb, "amend! ");
+		off = sb->len;
+		format_commit_message(commit, "%B", sb, ctx);
+		subject = sb->buf + off;
+		/*
+		* If the message does not start with 'amend!' then we
+		* duplicate the subject line, ready for the user to
+		* edit.
+		*/
+		if (!starts_with(subject, "amend!")) {
+			struct strbuf buf = STRBUF_INIT;
+			const char *end = strstr(subject, "\n\n");
+			int len = end ? end - subject : sb->len - off;
+			strbuf_addf(&buf, "%.*s\n\n", len, subject);
+			strbuf_insert(sb, off, buf.buf, buf.len);
+			strbuf_release(&buf);
+		}
+	}
+	return 0;
+}
+
 static int prepare_to_commit(const char *index_file, const char *prefix,
 			     struct commit *current_head,
 			     struct wt_status *s,
@@ -745,15 +777,29 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	} else if (fixup_message) {
 		struct pretty_print_context ctx = {0};
 		struct commit *commit;
-		commit = lookup_commit_reference_by_name(fixup_message);
-		if (!commit)
-			die(_("could not lookup commit %s"), fixup_message);
-		ctx.output_encoding = get_commit_output_encoding();
-		format_commit_message(commit, "fixup! %s\n\n",
+		if (skip_prefix(fixup_message, "amend:", &fixup_message) ||
+			skip_prefix(fixup_message, "a:", &fixup_message)) {
+			use_editor = 1;
+			commit = lookup_commit_reference_by_name(fixup_message);
+			prepare_amend_commit(commit, &sb, &ctx);
+
+		} else if (skip_prefix(fixup_message, "reword:", &fixup_message) ||
+				   skip_prefix(fixup_message, "r:", &fixup_message)) {
+			allow_empty = 1;
+			use_editor  = 1;
+			commit = lookup_commit_reference_by_name(fixup_message);
+			prepare_amend_commit(commit, &sb, &ctx);
+		} else {
+			commit = lookup_commit_reference_by_name(fixup_message);
+			if (!commit)
+				die(_("could not lookup commit %s"), fixup_message);
+			ctx.output_encoding = get_commit_output_encoding();
+			format_commit_message(commit, "fixup! %s\n\n",
 				      &sb, &ctx);
-		if (have_option_m)
-			strbuf_addbuf(&sb, &message);
-		hook_arg1 = "message";
+			if (have_option_m)
+				strbuf_addbuf(&sb, &message);
+			hook_arg1 = "message";
+		}
 	} else if (!stat(git_path_merge_msg(the_repository), &statbuf)) {
 		size_t merge_msg_start;
 
@@ -1504,7 +1550,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK('m', "message", &message, N_("message"), N_("commit message"), opt_parse_m),
 		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
 		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
-		OPT_STRING(0, "fixup", &fixup_message, N_("commit"), N_("use autosquash formatted message to fixup specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("[a|amend:|r|reword:]commit"), N_("use autosquash formatted message to fixup or amend specified commit")),
 		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
 		OPT_BOOL(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
 		OPT_BOOL('s', "signoff", &signoff, N_("add a Signed-off-by trailer")),
