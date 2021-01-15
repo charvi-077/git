@@ -106,6 +106,7 @@ static const char *template_file;
 static const char *author_message, *author_message_buffer;
 static char *edit_message, *use_message;
 static char *fixup_message, *squash_message;
+const char *get_fixup_prefix;
 static int all, also, interactive, patch_interactive, only, amend, signoff;
 static int edit_flag = -1; /* unspecified */
 static int quiet, verbose, no_verify, allow_empty, dry_run, renew_authorship;
@@ -681,6 +682,33 @@ static void adjust_comment_line_char(const struct strbuf *sb)
 	comment_line_char = *p;
 }
 
+static int prepare_amend_commit(struct commit *commit, struct strbuf *sb,
+								struct pretty_print_context *ctx) {
+
+	char *subject;
+	size_t off;
+	off = sb->len;
+	format_commit_message(commit, "%B", sb, ctx);
+	subject = sb->buf + off;
+	/*
+	* If the message does not start with 'amend!' then we
+	* duplicate the subject line, ready for the user to
+	* edit.
+	*/
+	if (!starts_with(subject, "amend!")) {
+		struct strbuf buf = STRBUF_INIT;
+		const char *end = strstr(subject, "\n\n");
+		int len = end ? end - subject : sb->len - off;
+		strbuf_addf(&buf, "%.*s\n\n", len, subject);
+		strbuf_insert(sb, off, buf.buf, buf.len);
+		strbuf_release(&buf);
+	}
+	if(!have_option_m){
+		use_editor = 1;
+	}
+	return 0;
+}
+
 static int prepare_to_commit(const char *index_file, const char *prefix,
 			     struct commit *current_head,
 			     struct wt_status *s,
@@ -745,15 +773,21 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	} else if (fixup_message) {
 		struct pretty_print_context ctx = {0};
 		struct commit *commit;
+		//const char *prefix;
+		struct strbuf fmt = STRBUF_INIT;
 		commit = lookup_commit_reference_by_name(fixup_message);
 		if (!commit)
 			die(_("could not lookup commit %s"), fixup_message);
 		ctx.output_encoding = get_commit_output_encoding();
-		format_commit_message(commit, "fixup! %s\n\n",
-				      &sb, &ctx);
+		strbuf_addf(&fmt, "%s! %%s\n\n", get_fixup_prefix);
+		format_commit_message(commit, fmt.buf, &sb, &ctx);
 		if (have_option_m)
 			strbuf_addbuf(&sb, &message);
 		hook_arg1 = "message";
+		if (!strcmp(get_fixup_prefix,"amend")) {
+			prepare_amend_commit(commit, &sb, &ctx);
+		}
+
 	} else if (!stat(git_path_merge_msg(the_repository), &statbuf)) {
 		size_t merge_msg_start;
 
@@ -1170,11 +1204,6 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (force_author && renew_authorship)
 		die(_("Using both --reset-author and --author does not make sense"));
 
-	if (logfile || have_option_m || use_message || fixup_message)
-		use_editor = 0;
-	if (0 <= edit_flag)
-		use_editor = edit_flag;
-
 	/* Sanity check options */
 	if (amend && !current_head)
 		die(_("You have nothing to amend."));
@@ -1227,6 +1256,31 @@ static int parse_and_validate_options(int argc, const char *argv[],
 
 	if (also + only + all + interactive > 1)
 		die(_("Only one of --include/--only/--all/--interactive/--patch can be used."));
+
+	if (fixup_message) {
+	char *get_fixup_commit = strchr(fixup_message, ':');
+		if (get_fixup_commit && (get_fixup_commit != fixup_message)) {
+			*get_fixup_commit = '\0';
+			if (starts_with("amend", fixup_message)) {
+				get_fixup_prefix = "amend";
+				get_fixup_commit++;
+				fixup_message = get_fixup_commit;
+				use_editor = 1;
+			} else {
+				die(_("Option amend can only be used with --fixup"));
+			}
+		} else {
+			get_fixup_prefix = "fixup";
+			get_fixup_commit = fixup_message;
+			use_editor = 0;
+		}
+	}
+
+	if (logfile || have_option_m || use_message)
+		use_editor = 0;
+	if (0 <= edit_flag)
+		use_editor = edit_flag;
+
 	cleanup_mode = get_cleanup_mode(cleanup_arg, use_editor);
 
 	handle_untracked_files_arg(s);
@@ -1504,7 +1558,7 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_CALLBACK('m', "message", &message, N_("message"), N_("commit message"), opt_parse_m),
 		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
 		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
-		OPT_STRING(0, "fixup", &fixup_message, N_("commit"), N_("use autosquash formatted message to fixup specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("[amend:|reword:]commit"), N_("use autosquash formatted message to fixup or amend specified commit")),
 		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
 		OPT_BOOL(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
 		OPT_BOOL('s', "signoff", &signoff, N_("add a Signed-off-by trailer")),
