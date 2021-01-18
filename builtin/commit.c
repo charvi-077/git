@@ -105,8 +105,10 @@ static const char *template_file;
  */
 static const char *author_message, *author_message_buffer;
 static char *edit_message, *use_message;
-static const char *fixup_message, *squash_message;
+static char *fixup_message, *squash_message;
+const char *get_fixup_prefix;
 static int all, also, interactive, patch_interactive, only, amend, signoff;
+static int amend_fixup_message;
 static int edit_flag = -1; /* unspecified */
 static int quiet, verbose, no_verify, allow_empty, dry_run, renew_authorship;
 static int config_commit_verbose = -1; /* unspecified */
@@ -683,32 +685,27 @@ static void adjust_comment_line_char(const struct strbuf *sb)
 
 static int prepare_amend_commit(struct commit *commit, struct strbuf *sb,
 								struct pretty_print_context *ctx) {
-	if (!commit)
-		die(_("could not lookup commit %s"), fixup_message);
-	ctx->output_encoding = get_commit_output_encoding();
-	if (logfile || use_message || have_option_m) {
-		use_editor = 0;
-		format_commit_message(commit, "amend! %s\n\n", sb, ctx);
-	} else {
-		char *subject;
-		size_t off;
-		strbuf_addstr(sb, "amend! ");
-		off = sb->len;
-		format_commit_message(commit, "%B", sb, ctx);
-		subject = sb->buf + off;
-		/*
-		* If the message does not start with 'amend!' then we
-		* duplicate the subject line, ready for the user to
-		* edit.
-		*/
-		if (!starts_with(subject, "amend!")) {
-			struct strbuf buf = STRBUF_INIT;
-			const char *end = strstr(subject, "\n\n");
-			int len = end ? end - subject : sb->len - off;
-			strbuf_addf(&buf, "%.*s\n\n", len, subject);
-			strbuf_insert(sb, off, buf.buf, buf.len);
-			strbuf_release(&buf);
-		}
+
+	char *subject;
+	size_t off;
+	off = sb->len;
+	format_commit_message(commit, "%B", sb, ctx);
+	subject = sb->buf + off;
+	/*
+	* If the message does not start with 'amend!' then we
+	* duplicate the subject line, ready for the user to
+	* edit.
+	*/
+	if (!starts_with(subject, "amend!")) {
+		struct strbuf buf = STRBUF_INIT;
+		const char *end = strstr(subject, "\n\n");
+		int len = end ? end - subject : sb->len - off;
+		strbuf_addf(&buf, "%.*s\n\n", len, subject);
+		strbuf_insert(sb, off, buf.buf, buf.len);
+		strbuf_release(&buf);
+	}
+	if(!have_option_m){
+		use_editor = 1;
 	}
 	return 0;
 }
@@ -777,29 +774,35 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	} else if (fixup_message) {
 		struct pretty_print_context ctx = {0};
 		struct commit *commit;
-		if (skip_prefix(fixup_message, "amend:", &fixup_message) ||
-			skip_prefix(fixup_message, "a:", &fixup_message)) {
-			use_editor = 1;
-			commit = lookup_commit_reference_by_name(fixup_message);
-			prepare_amend_commit(commit, &sb, &ctx);
-
-		} else if (skip_prefix(fixup_message, "reword:", &fixup_message) ||
-				   skip_prefix(fixup_message, "r:", &fixup_message)) {
-			allow_empty = 1;
-			use_editor  = 1;
-			commit = lookup_commit_reference_by_name(fixup_message);
-			prepare_amend_commit(commit, &sb, &ctx);
+		//const char *prefix;
+		struct strbuf fmt = STRBUF_INIT;
+		/*char *get_fixup_commit = strchr(fixup_message, ':');
+		if (get_fixup_commit && get_fixup_commit != fixup_message) {
+			*get_fixup_commit = '\0';
+			if (starts_with("amend", fixup_message)) {
+				prefix = "amend";
+				get_fixup_commit++;
+			} else {
+				die(_("Option amend can only be used with --fixup"));
+			}
 		} else {
-			commit = lookup_commit_reference_by_name(fixup_message);
-			if (!commit)
-				die(_("could not lookup commit %s"), fixup_message);
-			ctx.output_encoding = get_commit_output_encoding();
-			format_commit_message(commit, "fixup! %s\n\n",
-				      &sb, &ctx);
-			if (have_option_m)
-				strbuf_addbuf(&sb, &message);
-			hook_arg1 = "message";
+			prefix = "fixup";
+			get_fixup_commit = fixup_message;
+		}*/
+		commit = lookup_commit_reference_by_name(fixup_message);
+		if (!commit)
+			die(_("could not lookup commit %s"), fixup_message);
+		ctx.output_encoding = get_commit_output_encoding();
+		strbuf_addf(&fmt, "%s! %%s\n\n", get_fixup_prefix);
+		format_commit_message(commit, fmt.buf, &sb, &ctx);
+		if (have_option_m)
+			strbuf_addbuf(&sb, &message);
+		hook_arg1 = "message";
+		if (!strcmp(get_fixup_prefix,"amend")) {
+			amend_fixup_message =1;
+			prepare_amend_commit(commit, &sb, &ctx);
 		}
+
 	} else if (!stat(git_path_merge_msg(the_repository), &statbuf)) {
 		size_t merge_msg_start;
 
@@ -1216,11 +1219,6 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (force_author && renew_authorship)
 		die(_("Using both --reset-author and --author does not make sense"));
 
-	if (logfile || have_option_m || use_message || fixup_message)
-		use_editor = 0;
-	if (0 <= edit_flag)
-		use_editor = edit_flag;
-
 	/* Sanity check options */
 	if (amend && !current_head)
 		die(_("You have nothing to amend."));
@@ -1273,6 +1271,34 @@ static int parse_and_validate_options(int argc, const char *argv[],
 
 	if (also + only + all + interactive > 1)
 		die(_("Only one of --include/--only/--all/--interactive/--patch can be used."));
+
+	if (fixup_message) {
+	char *get_fixup_commit = strchr(fixup_message, ':');
+		if (get_fixup_commit && (get_fixup_commit != fixup_message)) {
+			*get_fixup_commit = '\0';
+			if (starts_with("amend", fixup_message)) {
+				get_fixup_prefix = "amend";
+				get_fixup_commit++;
+				fixup_message = get_fixup_commit;
+				use_editor = 1;
+			} else {
+				die(_("Option amend can only be used with --fixup"));
+			}
+		} else {
+			get_fixup_prefix = "fixup";
+			get_fixup_commit = fixup_message;
+			use_editor = 0;
+		}
+	}
+	/*if (fixup_message && (get_fixup_prefix == "amend")) {
+	} else {
+	}*/
+
+	if (logfile || have_option_m || use_message)
+		use_editor = 0;
+	if (0 <= edit_flag)
+		use_editor = edit_flag;
+
 	cleanup_mode = get_cleanup_mode(cleanup_arg, use_editor);
 
 	handle_untracked_files_arg(s);
