@@ -2055,6 +2055,7 @@ static int do_pick_commit(struct repository *r,
 	struct commit_message msg = { NULL, NULL, NULL, NULL };
 	struct strbuf msgbuf = STRBUF_INIT;
 	int res, unborn = 0, reword = 0, allow, drop_commit;
+	static int edit_fixup_message;
 	enum todo_command command = item->command;
 	struct commit *commit = item->commit;
 
@@ -2186,13 +2187,16 @@ static int do_pick_commit(struct repository *r,
 	if (command == TODO_REWORD)
 		reword = 1;
 	else if (is_fixup(command)) {
+		if (!final_fixup && (item->flags == TODO_EDIT_FIXUP_MSG))
+				edit_fixup_message =1;
 		if (update_squash_messages(r, command, commit,
 					   opts, item->flags))
 			return -1;
 		flags |= AMEND_MSG;
 		if (!final_fixup)
 			msg_file = rebase_path_squash_msg();
-		else if (file_exists(rebase_path_fixup_msg())) {
+		else if (file_exists(rebase_path_fixup_msg()) &&
+				 !edit_fixup_message) {
 			flags |= CLEANUP_MSG;
 			msg_file = rebase_path_fixup_msg();
 		} else {
