@@ -1890,17 +1890,17 @@ static int append_squash_message(struct strbuf *buf, const char *body,
 		if ((command == TODO_FIXUP) &&
 		    (flag & TODO_REPLACE_FIXUP_MSG)) {
 			fixup_msg = skip_blank_lines(buf->buf + fixup_off);
-			if (write_message(fixup_msg, strlen(fixup_msg),
-					rebase_path_fixup_msg(), 0) < 0)
-				return error(_("cannot write '%s'"),
-					rebase_path_fixup_msg());
-		} else {
-			unlink(rebase_path_fixup_msg());
-		}
-	} else  {
-		unlink(rebase_path_fixup_msg());
-	}
+			if (!file_exists(rebase_path_squash_msg())) {
+				if (write_message(fixup_msg, strlen(fixup_msg),
+							rebase_path_fixup_msg(), 0) < 0)
+					return error(_("cannot write '%s'"),
+									rebase_path_fixup_msg());
+				return 0;
+			}
 
+		}
+	}
+	unlink(rebase_path_fixup_msg());
 	return 0;
 }
 
