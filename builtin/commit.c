@@ -1171,6 +1171,21 @@ static void finalize_deferred_config(struct wt_status *s)
 		s->ahead_behind_flags = AHEAD_BEHIND_FULL;
 }
 
+static void check_fixup_reword_options(void) {
+	if (whence != FROM_COMMIT) {
+		if (whence == FROM_MERGE)
+			die(_("You are in the middle of a merge -- cannot reword."));
+		else if (is_from_cherry_pick(whence))
+			die(_("You are in the middle of a cherry-pick -- cannot reword."));
+	}
+	if (all)
+		die(_("cannot combine reword option of --fixup with --all"));
+	if (also)
+		die(_("cannot combine reword option of --fixup with --include"));
+	if (only)
+		die(_("cannot combine reword option of --fixup with --only"));
+}
+
 static int parse_and_validate_options(int argc, const char *argv[],
 				      const struct option *options,
 				      const char * const usage[],
@@ -1256,11 +1271,17 @@ static int parse_and_validate_options(int argc, const char *argv[],
 		if (fixup_commit && *fixup_commit == ':' &&
 		    fixup_commit != fixup_message) {
 			*fixup_commit = '\0';
-			if (starts_with("amend", fixup_message)) {
+			if (starts_with("amend", fixup_message) ||
+			    starts_with("reword", fixup_message)) {
 				fixup_prefix = "amend";
 				fixup_commit++;
+				if (*fixup_message == 'r') {
+					check_fixup_reword_options();
+					allow_empty = 1;
+					only = 1;
+				}
 			} else {
-				die(_("only amend option can be used with --fixup"));
+				die(_("only `amend` or `reword` options can be used with --fixup"));
 			}
 		} else {
 			fixup_commit = fixup_message;
@@ -1547,11 +1568,11 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
 		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
 		/*
-		 * TRANSLATORS: please do not translate [amend:]
-		 * Here "amend" is an option to the --fixup command
-		 * line flag, that creates amend! commit.
+		 * TRANSLATORS: please do not translate [(amend|reword):]
+		 * Here "amend" and "reword" are options to the --fixup
+		 * command line flag, that creates amend! commit.
 		 */
-		OPT_STRING(0, "fixup", &fixup_message, N_("[amend:]commit"), N_("use autosquash formatted message to fixup or amend specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("[(amend|reword):]commit"), N_("use autosquash formatted message to fixup or amend/reword specified commit")),
 		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
 		OPT_BOOL(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
 		OPT_BOOL('s', "signoff", &signoff, N_("add a Signed-off-by trailer")),
