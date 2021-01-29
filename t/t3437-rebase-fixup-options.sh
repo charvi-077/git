@@ -69,39 +69,15 @@ test_expect_success 'setup' '
 	test_tick &&
 	git commit --fixup=HEAD -a &&
 	test_tick &&
-	git commit --allow-empty -F - <<-EOF &&
-		amend! B
-		${EMPTY}
-		B
-		${EMPTY}
-		edited 1
-		EOF
+	FAKE_COMMIT_AMEND="edited 1" git commit --fixup=reword:B &&
 	test_tick &&
-	git commit --allow-empty -F - <<-EOF &&
-		amend! amend! B
-		${EMPTY}
-		B
-		${EMPTY}
-		edited 1
-		${EMPTY}
-		edited 2
-		EOF
+	FAKE_COMMIT_AMEND="edited 2" git commit --fixup=reword:HEAD &&
 	echo B2 >B &&
 	test_tick &&
 	FAKE_COMMIT_AMEND="edited squash" git commit --squash=HEAD -a &&
 	echo B3 >B &&
 	test_tick &&
-	git commit -a -F - <<-EOF &&
-		amend! amend! amend! B
-		${EMPTY}
-		B
-		${EMPTY}
-		edited 1
-		${EMPTY}
-		edited 2
-		${EMPTY}
-		edited 3
-		EOF
+	FAKE_COMMIT_AMEND="edited 3" git commit -a --fixup=amend:HEAD^ &&
 
 	GIT_AUTHOR_NAME="Rebase Author" &&
 	GIT_AUTHOR_EMAIL="rebase.author@example.com" &&
