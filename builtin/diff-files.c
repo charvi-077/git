@@ -36,8 +36,6 @@ int cmd_diff_files(int argc, const char **argv, const char *prefix)
 	 */
 	rev.diffopt.ita_invisible_in_index = 1;
 
-	precompose_argv(argc, argv);
-
 	argc = setup_revisions(argc, argv, &rev, NULL);
 	while (1 < argc && argv[1][0] == '-') {
 		if (!strcmp(argv[1], "--base"))
