@@ -15,8 +15,8 @@
 #       specified line.
 #
 #   "<cmd> <lineno>" -- add a line with the specified command
-#       ("pick", "squash", "fixup", "edit", "reword" or "drop") and the
-#       SHA1 taken from the specified line.
+#      ("pick", "squash", "fixup"|"fixup-C"|"fixup-c", "edit", "reword" or "drop")
+#      and the SHA1 taken from the specified line.
 #
 #   "exec_cmd_with_args" -- add an "exec cmd with args" line.
 #
@@ -53,8 +53,8 @@ set_fake_editor () {
 			action="$line";;
 		exec_*|x_*|break|b)
 			echo "$line" | sed 's/_/ /g' >> "$1";;
-		merge_*|fixup_*)
-			action=$(echo "$line" | sed 's/_/ /g');;
+		merge-*|fixup-*)
+			action=$(echo "$line" | sed 's/-/ -/');;
 		"#")
 			echo '# comment' >> "$1";;
 		">")
