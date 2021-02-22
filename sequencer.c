@@ -5473,8 +5473,9 @@ define_commit_slab(commit_todo_item, struct todo_item *);
 
 /*
  * Rearrange the todo list that has both "pick commit-id msg" and "pick
- * commit-id fixup!/squash! msg" in it so that the latter is put immediately
- * after the former, and change "pick" to "fixup"/"squash".
+ * commit-id fixup!/amend!/squash!/drop! msg" in it so that the latter is
+ * put immediatelyafter the former, and change "pick" to "fixup"/"fixup -C"/
+ * "squash"/"drop" respectively.
  *
  * Note that if the config has specified a custom instruction format, each log
  * message will have to be retrieved from the commit (as the oneline in the
@@ -5530,14 +5531,16 @@ int todo_list_rearrange_squash(struct todo_list *todo_list)
 		subject = subjects[i] = strbuf_detach(&buf, &subject_len);
 		unuse_commit_buffer(item->commit, commit_buffer);
 		if ((skip_prefix(subject, "fixup! ", &p) ||
-		     skip_prefix(subject, "squash! ", &p))) {
+		     skip_prefix(subject, "squash! ", &p) ||
+			 skip_prefix(subject, "drop! ", &p))) {
 			struct commit *commit2;
 
 			for (;;) {
 				while (isspace(*p))
 					p++;
 				if (!skip_prefix(p, "fixup! ", &p) &&
-				    !skip_prefix(p, "squash! ", &p))
+				    !skip_prefix(p, "squash! ", &p) &&
+					!skip_prefix(p, "drop! ", &p))
 					break;
 			}
 
@@ -5567,9 +5570,22 @@ int todo_list_rearrange_squash(struct todo_list *todo_list)
 		}
 		if (i2 >= 0) {
 			rearranged = 1;
-			todo_list->items[i].command =
-				starts_with(subject, "fixup!") ?
-				TODO_FIXUP : TODO_SQUASH;
+			if (starts_with(subject, "drop!")) {
+				todo_list->items[i].command = TODO_DROP;
+				/* TEMPORARY COMMENT
+				 * tried to change `pick` to `drop` for prev commit in todo-list
+				 * todo_list->items[i-1].command = TODO_DROP;
+				 *
+				 * other way tried ...
+				 * item = &todo_list->items[i-1];
+				 * item->command = TODO_DROP;
+				 * *commit_todo_item_at(&commit_todo, item->commit) = item;
+				 * item = &todo_list->items[i];
+			}
+			else if (starts_with(subject, "fixup!"))
+				todo_list->items[i].command = TODO_FIXUP;
+			else
+				todo_list->items[i].command = TODO_SQUASH;
 			if (tail[i2] < 0) {
 				next[i] = next[i2];
 				next[i2] = i;
@@ -5595,9 +5611,9 @@ int todo_list_rearrange_squash(struct todo_list *todo_list)
 
 			/*
 			 * Initially, all commands are 'pick's. If it is a
-			 * fixup or a squash now, we have rearranged it.
+			 * fixup or squash or drop now, we have rearranged it.
 			 */
-			if (is_fixup(command))
+			if (is_fixup(command) || command == TODO_DROP)
 				continue;
 
 			while (cur >= 0) {
