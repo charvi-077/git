@@ -38,6 +38,7 @@ struct replay_opts {
 	int signoff;
 	int allow_ff;
 	int allow_rerere_auto;
+	int prepare_drop_commit;
 	int allow_empty;
 	int allow_empty_message;
 	int drop_redundant_commits;

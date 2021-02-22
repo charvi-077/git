@@ -116,6 +116,7 @@ static int run_sequencer(int argc, const char **argv, struct replay_opts *opts)
 			N_("option for merge strategy"), option_parse_x),
 		{ OPTION_STRING, 'S', "gpg-sign", &opts->gpg_sign, N_("key-id"),
 		  N_("GPG sign commit"), PARSE_OPT_OPTARG, NULL, (intptr_t) "" },
+		OPT_BOOL(0, "drop", &opts->prepare_drop_commit, N_("use autosquash formatted message to drop specified commit")),
 		OPT_END()
 	};
 	struct option *options = base_options;
@@ -185,6 +186,9 @@ static int run_sequencer(int argc, const char **argv, struct replay_opts *opts)
 				"--edit", opts->edit,
 				NULL);
 
+	if (opts->prepare_drop_commit)
+		opts->edit = 0;
+		
 	if (cmd) {
 		opts->revs = NULL;
 	} else {

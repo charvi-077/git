@@ -1967,16 +1967,25 @@ static int do_pick_commit(struct repository *r,
 		base_label = msg.label;
 		next = parent;
 		next_label = msg.parent_label;
-		strbuf_addstr(&msgbuf, "Revert \"");
-		strbuf_addstr(&msgbuf, msg.subject);
-		strbuf_addstr(&msgbuf, "\"\n\nThis reverts commit ");
-		strbuf_addstr(&msgbuf, oid_to_hex(&commit->object.oid));
+		if (opts->prepare_drop_commit){
+			strbuf_addstr(&msgbuf, "drop! ");
+			strbuf_addstr(&msgbuf, msg.subject);
 
-		if (commit->parents && commit->parents->next) {
-			strbuf_addstr(&msgbuf, ", reversing\nchanges made to ");
-			strbuf_addstr(&msgbuf, oid_to_hex(&parent->object.oid));
+			if (commit->parents && commit->parents->next)
+				return error(_("can not drop the merge commit %s"),
+								oid_to_hex(&commit->object.oid));
+		} else {
+			strbuf_addstr(&msgbuf, "Revert \"");
+			strbuf_addstr(&msgbuf, msg.subject);
+			strbuf_addstr(&msgbuf, "\"\n\nThis reverts commit ");
+			strbuf_addstr(&msgbuf, oid_to_hex(&commit->object.oid));
+
+			if (commit->parents && commit->parents->next) {
+				strbuf_addstr(&msgbuf, ", reversing\nchanges made to ");
+				strbuf_addstr(&msgbuf, oid_to_hex(&parent->object.oid));
+			}
+			strbuf_addstr(&msgbuf, ".\n");
 		}
-		strbuf_addstr(&msgbuf, ".\n");
 	} else {
 		const char *p;
 
