@@ -398,10 +398,17 @@ test_expect_success '--fixup=reword: give error with pathsec' '
 	test_must_fail git commit --fixup=reword:HEAD~ -- foo 2>actual &&
 	test_cmp expect actual
 '
-test_expect_success '--fixup=reword: -F give error message' '
-	echo "fatal: Only one of -c/-C/-F/--fixup can be used." >expect &&
-	test_must_fail git commit --fixup=reword:HEAD~ -F msg  2>actual &&
-	test_cmp expect actual
+test_expect_success '--fixup with amend/reword options works with -F' '
+	commit_for_rebase_autosquash_setup &&
+	echo "new commit message" >msg_file &&
+	cat >expected <<-EOF &&
+	amend! target message subject line
+
+	new commit message
+	EOF
+	git commit --fixup=reword:HEAD~ -F msg_file &&
+	get_commit_msg HEAD >actual &&
+	test_cmp expected actual
 '
 
 test_expect_success 'commit --squash works with -F' '

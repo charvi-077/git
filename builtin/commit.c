@@ -740,13 +740,13 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	if (have_option_m && !fixup_message) {
 		strbuf_addbuf(&sb, &message);
 		hook_arg1 = "message";
-	} else if (logfile && !strcmp(logfile, "-")) {
+	} else if (logfile && !strcmp(logfile, "-") && !fixup_prefix) {
 		if (isatty(0))
 			fprintf(stderr, _("(reading log message from standard input)\n"));
 		if (strbuf_read(&sb, 0, 0) < 0)
 			die_errno(_("could not read log from standard input"));
 		hook_arg1 = "message";
-	} else if (logfile) {
+	} else if (logfile && !fixup_prefix) {
 		if (strbuf_read_file(&sb, logfile, 0) < 0)
 			die_errno(_("could not read log file '%s'"),
 				  logfile);
@@ -761,6 +761,7 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 	} else if (fixup_message) {
 		struct pretty_print_context ctx = {0};
 		struct commit *commit;
+		struct strbuf body = STRBUF_INIT;
 		char *fmt = xstrfmt("%s! %%s\n\n", fixup_prefix);
 		commit = lookup_commit_reference_by_name(fixup_commit);
 		if (!commit)
@@ -771,8 +772,14 @@ static int prepare_to_commit(const char *index_file, const char *prefix,
 		hook_arg1 = "message";
 		if (have_option_m)
 			strbuf_addbuf(&sb, &message);
-		else if (!strcmp(fixup_prefix,"amend"))
+		else if (!strcmp(fixup_prefix,"amend") && logfile) {
+			if (strbuf_read_file(&body, logfile, 0) < 0)
+				die_errno(_("could not read log file '%s'"),
+				  			logfile);
+			strbuf_addbuf(&sb, &body);
+		} else {
 			prepare_amend_commit(commit, &sb, &ctx);
+		}
 	} else if (!stat(git_path_merge_msg(the_repository), &statbuf)) {
 		size_t merge_msg_start;
 
@@ -1221,6 +1228,34 @@ static int parse_and_validate_options(int argc, const char *argv[],
 	if (0 <= edit_flag)
 		use_editor = edit_flag;
 
+	if (fixup_message) {
+		/*
+		 * As `amend`/`reword` suboptions contains only alpha
+		 * characters. So check if first non alpha character
+		 * in fixup_message is ':'.
+		 */
+		size_t len = get_alpha_len(fixup_message);
+		if (len && fixup_message[len] == ':') {
+			fixup_message[len] = '\0';
+			fixup_commit = fixup_message + ++len;
+			if (starts_with("amend", fixup_message) ||
+			    starts_with("reword", fixup_message)) {
+				fixup_prefix = "amend";
+				if (*fixup_message == 'r') {
+					check_fixup_reword_options(argc);
+					allow_empty = 1;
+					only = 1;
+				}
+			} else {
+				die(_("unknown option: --fixup=%s:%s"), fixup_message, fixup_commit);
+			}
+		} else {
+			fixup_commit = fixup_message;
+			fixup_prefix = "fixup";
+			use_editor = 0;
+		}
+	}
+
 	/* Sanity check options */
 	if (amend && !current_head)
 		die(_("You have nothing to amend."));
@@ -1238,7 +1273,7 @@ static int parse_and_validate_options(int argc, const char *argv[],
 		f++;
 	if (edit_message)
 		f++;
-	if (fixup_message)
+	if (fixup_message && !fixup_prefix)
 		f++;
 	if (logfile)
 		f++;
@@ -1273,34 +1308,6 @@ static int parse_and_validate_options(int argc, const char *argv[],
 
 	if (also + only + all + interactive > 1)
 		die(_("Only one of --include/--only/--all/--interactive/--patch can be used."));
-
-	if (fixup_message) {
-		/*
-		 * As `amend`/`reword` suboptions contains only alpha
-		 * characters. So check if first non alpha character
-		 * in fixup_message is ':'.
-		 */
-		size_t len = get_alpha_len(fixup_message);
-		if (len && fixup_message[len] == ':') {
-			fixup_message[len] = '\0';
-			fixup_commit = fixup_message + ++len;
-			if (starts_with("amend", fixup_message) ||
-				starts_with("reword", fixup_message)) {
-				fixup_prefix = "amend";
-				if (*fixup_message == 'r') {
-					check_fixup_reword_options(argc);
-					allow_empty = 1;
-					only = 1;
-				}
-			} else {
-				die(_("unknown option: --fixup=%s:%s"), fixup_message, fixup_commit);
-			}
-		} else {
-			fixup_commit = fixup_message;
-			fixup_prefix = "fixup";
-			use_editor = 0;
-		}
-	}
 
 	cleanup_mode = get_cleanup_mode(cleanup_arg, use_editor);
 
