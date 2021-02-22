@@ -1186,6 +1186,27 @@ static void finalize_deferred_config(struct wt_status *s)
 		s->ahead_behind_flags = AHEAD_BEHIND_FULL;
 }
 
+static void check_fixup_reword_options(int argc, const char *argv[]) {
+	if (whence != FROM_COMMIT) {
+		if (whence == FROM_MERGE)
+			die(_("You are in the middle of a merge -- cannot reword."));
+		else if (is_from_cherry_pick(whence))
+			die(_("You are in the middle of a cherry-pick -- cannot reword."));
+	}
+	if (argc)
+		die(_("cannot combine reword option of --fixup with path %s"), *argv);
+	if (patch_interactive)
+		die(_("cannot combine reword option of --fixup with --patch"));
+	if (interactive)
+		die(_("cannot combine reword option of --fixup with --interactive"));
+	if (all)
+		die(_("cannot combine reword option of --fixup with --all"));
+	if (also)
+		die(_("cannot combine reword option of --fixup with --include"));
+	if (only)
+		die(_("cannot combine reword option of --fixup with --only"));
+}
+
 /* returns the length of intial segment of alpha characters only */
 static size_t get_alpha_len(char *fixup_message) {
 	const char alphas[] = "abcdefghijklmnopqrstuvwxyz";
@@ -1270,18 +1291,25 @@ static int parse_and_validate_options(int argc, const char *argv[],
 
 	if (fixup_message) {
 		/*
-		 * As `amend` suboption contains only alpha
-		 * character. So check if first non alpha
-		 * character in fixup_message is ':'.
+		 * As `amend`/`reword` suboptions contains only alpha
+		 * characters. So check if first non alpha character
+		 * in fixup_message is ':'.
 		 */
 		size_t len = get_alpha_len(fixup_message);
 		if (len && fixup_message[len] == ':') {
 			fixup_message[len++] = '\0';
 			fixup_commit = fixup_message + len;
-			if (starts_with("amend", fixup_message))
+			if (starts_with("amend", fixup_message) ||
+			    starts_with("reword", fixup_message)) {
 				fixup_prefix = "amend";
-			else
+				if (*fixup_message == 'r') {
+					check_fixup_reword_options(argc, argv);
+					allow_empty = 1;
+					only = 1;
+				}
+			} else {
 				die(_("unknown option: --fixup=%s:%s"), fixup_message, fixup_commit);
+			}
 		} else {
 			fixup_commit = fixup_message;
 			fixup_prefix = "fixup";
@@ -1567,10 +1595,10 @@ int cmd_commit(int argc, const char **argv, const char *prefix)
 		OPT_STRING('c', "reedit-message", &edit_message, N_("commit"), N_("reuse and edit message from specified commit")),
 		OPT_STRING('C', "reuse-message", &use_message, N_("commit"), N_("reuse message from specified commit")),
 		/*
-		 * TRANSLATORS: Leave "[amend:]" as-is, and
-		 * only translate <commit>.
+		 * TRANSLATORS: Leave "[(amend|reword):]" as-is,
+		 * and only translate <commit>.
 		 */
-		OPT_STRING(0, "fixup", &fixup_message, N_("[amend:]commit"), N_("use autosquash formatted message to fixup or amend specified commit")),
+		OPT_STRING(0, "fixup", &fixup_message, N_("[(amend|reword):]commit"), N_("use autosquash formatted message to fixup or amend/reword specified commit")),
 		OPT_STRING(0, "squash", &squash_message, N_("commit"), N_("use autosquash formatted message to squash specified commit")),
 		OPT_BOOL(0, "reset-author", &renew_authorship, N_("the commit is authored by me now (used with -C/-c/--amend)")),
 		OPT_BOOL('s', "signoff", &signoff, N_("add a Signed-off-by trailer")),
